@@ -2,7 +2,7 @@
 
 Chat, based of Public/Private key and signatures, and working on MQTT Protocol
 
-![Showcase](showcase.gif)
+![Showcase](docs/showcase.gif)
 
 > [!WARNING]
 > 
