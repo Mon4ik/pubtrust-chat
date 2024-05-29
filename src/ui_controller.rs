@@ -5,7 +5,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
 use crossterm::{cursor, QueueableCommand, style};
-use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
+use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind, poll, read};
 use crossterm::style::{Attribute, Color, style, Stylize};
 use crossterm::terminal;
 
@@ -16,15 +16,16 @@ struct Terminal {
     height: u16,
 }
 
-pub struct UI {
+pub struct UIController {
     terminal: Terminal,
     history: Vec<String>,
     prompt: String,
+
     ui_message_receiver: Receiver<UIMessage>,
     ui_action_sender: Sender<UIAction>,
 }
 
-impl UI {
+impl UIController {
     pub fn new(ui_message_receiver: Receiver<UIMessage>, ui_action_sender: Sender<UIAction>) -> Self {
         Self {
             terminal: Terminal {
@@ -81,6 +82,9 @@ impl UI {
                             }
                             _ => {}
                         }
+                    }
+                    Event::Paste(content) => {
+                        self.prompt.push_str(&content);
                     }
                     Event::Resize(width, height) => {
                         self.terminal.width = width;

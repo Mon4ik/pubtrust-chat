@@ -698,6 +698,7 @@ dependencies = [
  "bytes",
  "clap",
  "crossterm",
+ "hex",
  "home",
  "log",
  "nanoid",

@@ -6,12 +6,13 @@ use clap::Parser;
 use home::home_dir;
 use serde::{Deserialize, Serialize};
 
-use crate::client::ProtocolClient;
+use crate::mqtt_controller::MqttController;
+use crate::ui_controller::UIController;
 use crate::utils::{ClientSettings, UIAction, UIMessage};
 
 mod packets;
-mod ui;
-mod client;
+mod ui_controller;
+mod mqtt_controller;
 mod utils;
 mod data_client;
 
@@ -50,8 +51,6 @@ fn main() {
         profile
     };
 
-    println!("{:?}", profile);
-
     let client_settings = ClientSettings {
         host: args.host,
         port: args.port,
@@ -63,17 +62,21 @@ fn main() {
     let (ui_action_sender, ui_action_receiver) = channel::<UIAction>();
 
     thread::spawn(move || {
-        let mut client = ProtocolClient::new(
+        let mut mqtt_controller = MqttController::new(
             client_settings.clone(),
             ui_message_sender,
             ui_action_receiver,
         );
 
-        client.start();
+        mqtt_controller.start();
     });
 
     thread::spawn(move || {
-        let mut ui_controller = ui::UI::new(ui_message_receiver, ui_action_sender);
+        let mut ui_controller = UIController::new(
+            ui_message_receiver,
+            ui_action_sender,
+        );
+
         ui_controller.start();
     });
 

@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nanoid::nanoid;
 use openssl::pkey::{PKey, Public};
+use openssl::sha;
 use rumqttc::{Client, ClientError, Connection, Event, Incoming, MqttOptions, Publish, QoS};
 use serde::Serialize;
 
@@ -17,7 +18,7 @@ struct ChatClient {
     pubkey: PKey<Public>,
 }
 
-pub struct ProtocolClient {
+pub struct MqttController {
     client: Client,
     connection: Connection,
     chat_clients: Vec<ChatClient>,
@@ -29,7 +30,7 @@ pub struct ProtocolClient {
     data_client: DataClient,
 }
 
-impl ProtocolClient {
+impl MqttController {
     pub fn new(client_settings: ClientSettings, ui_message_sender: Sender<UIMessage>, ui_action_receiver: Receiver<UIAction>) -> Self {
         let mut mqttoptions = MqttOptions::new(
             nanoid!(10),
@@ -200,7 +201,7 @@ impl ProtocolClient {
     // Packet interaction
 
     fn deal_req_announcement(&mut self, packet: packets::ReqAnnouncement) {
-       self.send_announcement();
+        self.send_announcement();
     }
 
     fn deal_announcement(&mut self, packet: packets::Announcement) {
@@ -220,20 +221,35 @@ impl ProtocolClient {
     }
 
     fn deal_chat_message(&mut self, packet: packets::ChatMessage) {
-        let mut from_client: Option<ChatClient> = None;
+        let mut from_client_res: Option<ChatClient> = None;
         for (i, chat_client) in self.chat_clients.iter().enumerate() {
             let ok = DataClient::try_verify(&packet.message, &packet.timestamp, &packet.signature, &chat_client.pubkey);
 
             if ok {
-                from_client = Some(self.chat_clients[i].clone());
+                from_client_res = Some(self.chat_clients[i].clone());
                 break;
             }
         }
-        if from_client.is_none() { return; }
+        if from_client_res.is_none() { return; }
+
+        let mut hasher = sha::Sha1::new();
+
+        let from_client = from_client_res.unwrap();
+
+        let alias = from_client.alias;
+        let pubkey = &from_client.pubkey;
+        let pubkey_bytes = pubkey.public_key_to_pem();
+        if pubkey_bytes.is_err() { return; }
+
+        hasher.update(&pubkey_bytes.unwrap());
+
+        let pubkey_hash_finish = hasher.finish();
+        let pubkey_hash = &hex::encode(pubkey_hash_finish)[..6];
 
         self.ui_message_sender.send(
             UIMessage::chat(
-                from_client.unwrap().alias.to_string(),
+                alias,
+                pubkey_hash.to_string(),
                 packet.message,
             )
         ).unwrap()

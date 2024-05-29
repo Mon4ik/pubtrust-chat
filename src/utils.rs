@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crossterm::style::{Attribute, style, Stylize};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -24,7 +25,7 @@ impl UIMessage {
         Self {
             message_type: UIMessageType::System,
             author: String::new(),
-            message
+            message,
         }
     }
 
@@ -32,7 +33,7 @@ impl UIMessage {
         Self {
             message_type: UIMessageType::SystemError,
             author: String::new(),
-            message
+            message,
         }
     }
 
@@ -41,15 +42,21 @@ impl UIMessage {
         Self {
             message_type: UIMessageType::DM,
             author: format!("{} → {}", client1, client2),
-            message
+            message,
         }
     }
 
-    pub fn chat(author: String, message: String) -> Self {
+    pub fn chat(author: String, author_hash: String, message: String) -> Self {
         Self {
             message_type: UIMessageType::Chat,
-            author,
-            message
+            author: format!(
+                "{} {}",
+                author,
+                style(format!("({})", author_hash))
+                    .attribute(Attribute::Dim)
+                    .to_string()
+            ),
+            message,
         }
     }
 }
