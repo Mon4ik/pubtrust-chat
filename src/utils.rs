@@ -2,63 +2,37 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crossterm::style::{Attribute, style, Stylize};
+use openssl::pkey::{PKey, Public};
+use openssl::sha;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-#[derive(Debug)]
-pub enum UIMessageType {
-    System,
-    SystemError,
-    Chat,
-    DM,
+#[derive(Clone, Debug)]
+pub struct ChatClient {
+    pub alias: String,
+    pub pubkey: PKey<Public>,
+}
+
+impl ChatClient {
+    pub fn get_pubkey_hash(&self) -> Option<String> {
+        let pubkey_bytes = self.pubkey.public_key_to_pem();
+        if pubkey_bytes.is_err() { return None }
+
+        let mut hasher = sha::Sha1::new();
+        hasher.update(&pubkey_bytes.unwrap());
+
+        let pubkey_hash_finish = hasher.finish();
+
+        Some(hex::encode(pubkey_hash_finish)[..6].to_string())
+    }
 }
 
 #[derive(Debug)]
-pub struct UIMessage {
-    pub message_type: UIMessageType,
-    pub author: String,
-    pub message: String,
-}
-
-impl UIMessage {
-    pub fn system(message: String) -> Self {
-        Self {
-            message_type: UIMessageType::System,
-            author: String::new(),
-            message,
-        }
-    }
-
-    pub fn system_error(message: String) -> Self {
-        Self {
-            message_type: UIMessageType::SystemError,
-            author: String::new(),
-            message,
-        }
-    }
-
-
-    pub fn dm(client1: String, client2: String, message: String) -> Self {
-        Self {
-            message_type: UIMessageType::DM,
-            author: format!("{} → {}", client1, client2),
-            message,
-        }
-    }
-
-    pub fn chat(author: String, author_hash: String, message: String) -> Self {
-        Self {
-            message_type: UIMessageType::Chat,
-            author: format!(
-                "{} {}",
-                author,
-                style(format!("({})", author_hash))
-                    .attribute(Attribute::Dim)
-                    .to_string()
-            ),
-            message,
-        }
-    }
+pub enum UIMessage {
+    System(String),
+    SystemError(String),
+    Chat(ChatClient, String),
+    DM(ChatClient, ChatClient, String),
 }
 
 

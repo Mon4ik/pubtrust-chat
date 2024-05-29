@@ -5,11 +5,11 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
 use crossterm::{cursor, QueueableCommand, style};
-use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind, poll, read};
+use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
 use crossterm::style::{Attribute, Color, style, Stylize};
 use crossterm::terminal;
 
-use crate::utils::{UIAction, UIMessage, UIMessageType};
+use crate::utils::{UIAction, UIMessage};
 
 struct Terminal {
     width: u16,
@@ -130,56 +130,73 @@ impl UIController {
     }
 
     fn format_ui_message(&self, ui_message: UIMessage) -> String {
-        match ui_message.message_type {
-            UIMessageType::System => {
+        match ui_message {
+            UIMessage::System(message) => {
                 format!(
                     "{} {}",
                     style("[SYSM]")
                         .with(Color::White)
                         .on(Color::Blue)
                         .to_string(),
-                    style(ui_message.message)
+                    style(message)
                         .with(Color::Blue)
                         .to_string()
                 )
             }
-            UIMessageType::SystemError => {
+
+            UIMessage::SystemError(message) => {
                 format!(
                     "{} {}",
                     style("[SYSE]")
                         .with(Color::White)
                         .on(Color::Red)
                         .to_string(),
-                    style(ui_message.message)
+                    style(message)
                         .with(Color::Red)
                         .to_string()
                 )
             }
-            UIMessageType::Chat => {
+
+            UIMessage::Chat(author, message) => {
                 format!(
-                    "{} {}: {}",
+                    "{} {} {}: {}",
                     style("[CHAT]")
                         .with(Color::White)
                         .on(Color::DarkGrey)
                         .to_string(),
-                    style(ui_message.author)
+                    style(&author.alias)
                         .attribute(Attribute::Bold)
                         .to_string(),
-                    style(ui_message.message)
+                    style(&author.get_pubkey_hash().unwrap_or("......".to_string()))
+                        .attribute(Attribute::Bold)
+                        .attribute(Attribute::Dim)
+                        .to_string(),
+                    style(message)
                         .to_string()
                 )
             }
-            UIMessageType::DM => {
+
+            UIMessage::DM(author1, author2, message) => {
                 format!(
                     "{} {}: {}",
                     style("[ DM ]")
                         .with(Color::White)
                         .on(Color::Magenta)
                         .to_string(),
-                    style(ui_message.author)
+                    style(format!(
+                        "{} {} → {} {}",
+                        author1.alias,
+                        style(author1.get_pubkey_hash().unwrap_or("......".to_string()))
+                            .attribute(Attribute::Dim)
+                            .to_string(),
+                        author2.alias,
+                        style(author2.get_pubkey_hash().unwrap_or("......".to_string()))
+                            .attribute(Attribute::Dim)
+                            .to_string(),
+                    ))
                         .attribute(Attribute::Bold)
                         .to_string(),
-                    style(ui_message.message)
+                    style(message)
                         .to_string()
                 )
             }
@@ -204,7 +221,7 @@ impl UIController {
                 "/alias" => {
                     if props.len() != 2 {
                         self.history.push(self.format_ui_message(
-                            UIMessage::system_error(
+                            UIMessage::SystemError(
                                 "Not enough arguments. Usage: /alias <your_alias>".to_string()
                             )
                         ));
@@ -217,7 +234,7 @@ impl UIController {
                 }
                 _ => {
                     self.history.push(self.format_ui_message(
-                        UIMessage::system_error(format!("Unknown command \"{}\".", props[0]))
+                        UIMessage::SystemError(format!("Unknown command \"{}\".", props[0]))
                     ));
                 }
             }

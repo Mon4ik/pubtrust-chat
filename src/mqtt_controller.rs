@@ -3,20 +3,13 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nanoid::nanoid;
-use openssl::pkey::{PKey, Public};
-use openssl::sha;
+use openssl::pkey::PKey;
 use rumqttc::{Client, ClientError, Connection, Event, Incoming, MqttOptions, Publish, QoS};
 use serde::Serialize;
 
 use crate::data_client::DataClient;
 use crate::packets::{self, PacketType};
-use crate::utils::{ClientSettings, UIAction, UIMessage};
-
-#[derive(Clone, Debug)]
-struct ChatClient {
-    alias: String,
-    pubkey: PKey<Public>,
-}
+use crate::utils::{ChatClient, ClientSettings, UIAction, UIMessage};
 
 pub struct MqttController {
     client: Client,
@@ -73,7 +66,7 @@ impl MqttController {
                     match notification {
                         Ok(event) => self.handle_packet(event),
                         Err(err) => {
-                            self.ui_message_sender.send(UIMessage::system_error(
+                            self.ui_message_sender.send(UIMessage::SystemError(
                                 format!("MQTT Error: {}", err)
                             )).unwrap();
 
@@ -107,16 +100,16 @@ impl MqttController {
                 self.data_client.database_file.alias = alias;
                 let res = self.data_client.save_changes();
                 if res.is_err() {
-                    self.ui_message_sender.send(UIMessage::system_error(format!("{:?}", res.err().unwrap()))).unwrap()
+                    self.ui_message_sender.send(UIMessage::SystemError(format!("{:?}", res.err().unwrap()))).unwrap()
                 }
                 self.send_announcement();
 
                 self.ui_message_sender.send(
-                    UIMessage::system("Restart client to apply changes".to_string())
+                    UIMessage::System("Restart client to apply changes".to_string())
                 ).unwrap()
             }
 
-            _ => self.ui_message_sender.send(UIMessage::system_error("unimplemented".to_string())).unwrap()
+            _ => self.ui_message_sender.send(UIMessage::SystemError("unimplemented".to_string())).unwrap()
         }
     }
 
@@ -143,7 +136,7 @@ impl MqttController {
                 match incoming {
                     Incoming::Publish(publish) => self.handle_publish_packet(publish),
                     Incoming::ConnAck(_conn) => {
-                        self.ui_message_sender.send(UIMessage::system(
+                        self.ui_message_sender.send(UIMessage::System(
                             format!("Connected to room \"{}\"", self.client_settings.topic)
                         )).unwrap();
                     }
@@ -208,12 +201,6 @@ impl MqttController {
         let pubkey = PKey::public_key_from_pem(packet.pub_key.as_bytes());
         if pubkey.is_err() { return; }
 
-        // self.ui_message_sender.send(UIMessage {
-        //     message_type: UIMessageType::System,
-        //     author: String::new(),
-        //     message: format!("User in chat: {}", &packet.alias),
-        // }).unwrap();
-
         self.chat_clients.push(ChatClient {
             alias: packet.alias,
             pubkey: pubkey.unwrap(),
@@ -232,26 +219,11 @@ impl MqttController {
         }
         if from_client_res.is_none() { return; }
 
-        let mut hasher = sha::Sha1::new();
 
         let from_client = from_client_res.unwrap();
 
-        let alias = from_client.alias;
-        let pubkey = &from_client.pubkey;
-        let pubkey_bytes = pubkey.public_key_to_pem();
-        if pubkey_bytes.is_err() { return; }
-
-        hasher.update(&pubkey_bytes.unwrap());
-
-        let pubkey_hash_finish = hasher.finish();
-        let pubkey_hash = &hex::encode(pubkey_hash_finish)[..6];
-
         self.ui_message_sender.send(
-            UIMessage::chat(
-                alias,
-                pubkey_hash.to_string(),
-                packet.message,
-            )
+            UIMessage::Chat(from_client.clone(), packet.message)
         ).unwrap()
     }
 }
