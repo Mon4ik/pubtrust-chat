@@ -52,16 +52,25 @@ impl UIController {
         stdout.flush().unwrap();
 
         let mut quit = false;
+        let mut screen_updated = false;
 
         while !quit {
-            self.draw();
+            if screen_updated {
+                self.draw();
+                screen_updated = false
+            }
 
             match self.ui_message_receiver.try_recv() {
-                Ok(ui_message) => self.history.push(self.format_ui_message(ui_message)),
+                Ok(ui_message) => {
+                    screen_updated = true;
+                    self.history.push(self.format_ui_message(ui_message))
+                },
                 _ => {}
             }
 
             if poll(Duration::from_millis(100)).expect("Cannot poll events.") {
+                screen_updated = true;
+
                 // Event is available:
                 match read().unwrap() {
                     Event::Key(event) => {
