@@ -4,6 +4,11 @@ Chat, based of Public/Private key and signatures, and working on MQTT Protocol
 
 ![Showcase](showcase.gif)
 
+> [!WARNING]
+> 
+> Poor alpha alpha alpha version, a lot of changes will happen
+
+
 ## Installation
 
 1. Install Rust
