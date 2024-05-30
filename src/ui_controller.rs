@@ -9,7 +9,7 @@ use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
 use crossterm::style::{Attribute, Color, style, Stylize};
 use crossterm::terminal;
 
-use crate::utils::{UIAction, UIMessage};
+use crate::utils::{UIAction, UIHelpCommand, UIMessage};
 
 struct Terminal {
     width: u16,
@@ -20,6 +20,7 @@ pub struct UIController {
     terminal: Terminal,
     history: Vec<String>,
     prompt: String,
+    quit: bool,
 
     ui_message_receiver: Receiver<UIMessage>,
     ui_action_sender: Sender<UIAction>,
@@ -34,6 +35,7 @@ impl UIController {
             },
             history: vec![],
             prompt: "".to_string(),
+            quit: false,
             ui_message_receiver,
             ui_action_sender,
         }
@@ -51,10 +53,9 @@ impl UIController {
         terminal::enable_raw_mode().unwrap();
         stdout.flush().unwrap();
 
-        let mut quit = false;
         let mut screen_updated = false;
 
-        while !quit {
+        while !self.quit {
             if screen_updated {
                 self.draw();
                 screen_updated = false
@@ -64,7 +65,7 @@ impl UIController {
                 Ok(ui_message) => {
                     screen_updated = true;
                     self.history.push(self.format_ui_message(ui_message))
-                },
+                }
                 _ => {}
             }
 
@@ -77,7 +78,7 @@ impl UIController {
                         match event.code {
                             KeyCode::Char(char) => {
                                 if char == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) { // ^C -> exit
-                                    quit = true;
+                                    self.quit = true;
                                 } else {
                                     self.prompt.push(char);
                                 }
@@ -221,11 +222,28 @@ impl UIController {
 
             match props[0] {
                 "/dm" => {
-                    // self.history.push(self.format_ui_message(UIMessage {
-                    //     message_type: UIMessageType::DM,
-                    //     author: String::from("gigachad → gigachad2"),
-                    //     message: "I love dming publicly".to_string(),
-                    // }));
+                    self.history.push(self.format_ui_message(
+                        UIMessage::SystemError(
+                            "Not implemented.".to_string()
+                        )
+                    ));
+                }
+                "/exit" | "/q" => {
+                    self.quit = true;
+                }
+                "/list" => {
+                    self.history.push(self.format_ui_message(
+                        UIMessage::SystemError(
+                            "Not implemented.".to_string()
+                        )
+                    ));
+                }
+                "/topic" => {
+                    self.history.push(self.format_ui_message(
+                        UIMessage::SystemError(
+                            "Not implemented.".to_string()
+                        )
+                    ));
                 }
                 "/alias" => {
                     if props.len() != 2 {
@@ -240,6 +258,70 @@ impl UIController {
                     self.ui_action_sender.send(
                         UIAction::ChangeAlias(props[1].to_string())
                     ).unwrap();
+                }
+                "/help" => {
+                    // style("Available commands:")
+                    //     .attribute(Attribute::Bold),
+                    // style(" /exit, /q - Exit from chat"),
+                    // style(" /list     - "),
+                    let mut commands: Vec<UIHelpCommand> = vec![];
+
+                    commands.push(UIHelpCommand {
+                        name: String::from("/exit, /q"),
+                        description: String::from("Exit from chat"),
+                    });
+
+                    commands.push(UIHelpCommand {
+                        name: String::from("/list"),
+                        description: String::from("Display list of announced clients"),
+                    });
+
+                    commands.push(UIHelpCommand {
+                        name: String::from("/room <new_room>"),
+                        description: String::from("Change room (MQTT Topic)"),
+                    });
+
+                    commands.push(UIHelpCommand {
+                        name: String::from("/alias <new_alias>"),
+                        description: String::from("Change alias"),
+                    });
+
+                    commands.push(UIHelpCommand {
+                        name: String::from("/dm"),
+                        description: String::from("Not implemented"),
+                    });
+
+                    let max_size = commands.iter()
+                        .map(|cmd| cmd.name.len())
+                        .max().unwrap();
+
+                    self.history.push(self.format_ui_message(
+                        UIMessage::System(
+                            style("Available commands:")
+                                .attribute(Attribute::Bold)
+                                .to_string()
+                        )
+                    ));
+                    for command in commands {
+                        self.history.push(self.format_ui_message(
+                            UIMessage::System(
+                                format!(
+                                    " {}{} {} {}",
+
+                                    style(&command.name)
+                                        .attribute(Attribute::Bold)
+                                        .to_string(),
+                                    " ".repeat(max_size - command.name.len()),
+
+                                    style("-")
+                                        .with(Color::Blue),
+
+                                    style(command.description)
+                                        .with(Color::Blue)
+                                )
+                            )
+                        ));
+                    }
                 }
                 _ => {
                     self.history.push(self.format_ui_message(

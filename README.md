@@ -32,9 +32,9 @@ Chat, based of Public/Private key and signatures, and working on MQTT Protocol
    ```
 
 ## TODO
-- [ ] Better code structure (tbh looks like a 💩)
+- [X] Better code structure (tbh looks like a 💩)
 - [ ] Do something with thread channels, mutex, etc
 - [ ] GitHub Actions
-- [ ] /q, /exit, /list, /help commands
+- [X] /q, /exit, /list, /help commands
 - [ ] DirectMessages
 - [ ] Check windows support ~~(nobody cares)~~

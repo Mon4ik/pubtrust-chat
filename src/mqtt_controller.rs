@@ -106,8 +106,7 @@ impl MqttController {
                 self.publish_packet(PacketType::ChatMessage, &chat_message).expect("Couldn't send message.");
             }
             UIAction::ChangeAlias(alias) => {
-                self.data_client.database_file.alias = alias;
-                let res = self.data_client.save_changes();
+                let res = self.data_client.change_alias(alias);
                 if res.is_err() {
                     self.ui_message_sender.send(UIMessage::SystemError(format!("{:?}", res.err().unwrap()))).unwrap()
                 }
