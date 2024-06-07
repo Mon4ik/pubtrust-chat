@@ -1,5 +1,6 @@
 use std::{env, thread};
 use std::path::PathBuf;
+use std::process::exit;
 use std::sync::mpsc::channel;
 
 use clap::Parser;
@@ -11,10 +12,11 @@ use crate::ui_controller::UIController;
 use crate::utils::{ClientSettings, UIAction, UIMessage};
 
 mod packets;
-mod ui_controller;
+mod old_ui_controller;
 mod mqtt_controller;
 mod utils;
 mod data_client;
+mod ui_controller;
 
 
 /// Simple program to greet a person
@@ -77,7 +79,10 @@ fn main() {
             ui_action_sender,
         );
 
-        ui_controller.start();
+        match ui_controller.start() {
+            Ok(_) => exit(0),
+            Err(_) => exit(1)
+        }
     });
 
 

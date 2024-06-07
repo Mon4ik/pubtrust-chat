@@ -1,26 +1,18 @@
-use std::io::{stdout, Write};
-use std::ops::Index;
-use std::process::exit;
+use std::cmp::min;
+use std::io::{self, stdout};
 use std::sync::mpsc::{Receiver, Sender};
-use std::time::Duration;
 
-use crossterm::{cursor, QueueableCommand, style};
-use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
-use crossterm::style::{Attribute, Color, style, Stylize};
-use crossterm::terminal;
+use crossterm::{event, ExecutableCommand, terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}};
+use crossterm::event::{Event, KeyCode, KeyModifiers};
+use ratatui::prelude::*;
+use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::block::Title;
 
 use crate::utils::{UIAction, UIHelpCommand, UIMessage};
 
-struct Terminal {
-    width: u16,
-    height: u16,
-}
-
 pub struct UIController {
-    terminal: Terminal,
-    history: Vec<String>,
+    history: Vec<Line<'static>>,
     prompt: String,
-    quit: bool,
 
     ui_message_receiver: Receiver<UIMessage>,
     ui_action_sender: Sender<UIAction>,
@@ -28,187 +20,193 @@ pub struct UIController {
 
 impl UIController {
     pub fn new(ui_message_receiver: Receiver<UIMessage>, ui_action_sender: Sender<UIAction>) -> Self {
+        // let mut lines = vec![];
+        // lines.push(Line::from(vec![
+        //     Span::styled("Hello ", Style::default().fg(Color::Yellow)),
+        //     Span::styled("World", Style::default().fg(Color::Blue).bg(Color::White)),
+        // ]));
+        //
+
         Self {
-            terminal: Terminal {
-                width: 0,
-                height: 0,
-            },
             history: vec![],
-            prompt: "".to_string(),
-            quit: false,
+            prompt: String::new(),
             ui_message_receiver,
             ui_action_sender,
         }
     }
 
-    pub fn start(&mut self) {
-        let mut stdout = stdout();
-        let (_w, _h) = terminal::size().unwrap_or((16, 16));
-        self.terminal.width = _w;
-        self.terminal.height = _h;
+    pub fn start(&mut self) -> io::Result<()> {
+        enable_raw_mode()?;
+        stdout().execute(EnterAlternateScreen)?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
+        let mut should_quit = false;
+        while !should_quit {
+            terminal.draw(|frame| {
+                self.ui(frame);
+            })?;
+            should_quit = self.handle_events()?;
+        }
 
-        stdout.queue(terminal::EnterAlternateScreen).unwrap();
-        stdout.queue(cursor::MoveTo(0, 0)).unwrap();
-        terminal::enable_raw_mode().unwrap();
-        stdout.flush().unwrap();
+        disable_raw_mode()?;
+        stdout().execute(LeaveAlternateScreen)?;
+        Ok(())
+    }
 
-        let mut screen_updated = false;
-
-        while !self.quit {
-            if screen_updated {
-                self.draw();
-                screen_updated = false
+    fn handle_events(&mut self) -> io::Result<bool> {
+        match self.ui_message_receiver.try_recv() {
+            Ok(ui_message) => {
+                self.history.push(self.format_ui_message(ui_message))
             }
+            _ => {}
+        }
 
-            match self.ui_message_receiver.try_recv() {
-                Ok(ui_message) => {
-                    screen_updated = true;
-                    self.history.push(self.format_ui_message(ui_message))
+        if event::poll(std::time::Duration::from_millis(50))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    match key.code {
+                        KeyCode::Char(char) => {
+                            if char == 'c' && key.modifiers.contains(KeyModifiers::CONTROL) {
+                                return Ok(true);
+                            } else {
+                                self.prompt.push(char);
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            self.prompt.pop();
+                        }
+                        KeyCode::Enter => {
+                            self.prompt_enter();
+                            self.prompt.clear();
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }
-
-            if poll(Duration::from_millis(100)).expect("Cannot poll events.") {
-                screen_updated = true;
-
-                // Event is available:
-                match read().unwrap() {
-                    Event::Key(event) => {
-                        match event.code {
-                            KeyCode::Char(char) => {
-                                if char == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) { // ^C -> exit
-                                    self.quit = true;
-                                } else {
-                                    self.prompt.push(char);
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                self.prompt.pop();
-                            }
-                            KeyCode::Enter => {
-                                self.prompt_enter();
-                                self.prompt = "".to_string()
-                            }
-                            _ => {}
-                        }
-                    }
-                    Event::Paste(content) => {
-                        self.prompt.push_str(&content);
-                    }
-                    Event::Resize(width, height) => {
-                        self.terminal.width = width;
-                        self.terminal.height = height;
-                    }
-                    _ => {}
-                }
-            }
         }
-
-
-        stdout.queue(terminal::LeaveAlternateScreen).unwrap();
-        terminal::disable_raw_mode().unwrap();
-        exit(0)
+        Ok(false)
     }
 
-    fn draw(&self) {
-        let mut stdout = stdout();
+    fn ui(&mut self, frame: &mut Frame) {
+        let chat_rect = Rect::new(0, 0, frame.size().width, frame.size().height - 3);
 
-        let term = &self.terminal;
-        stdout
-            .queue(terminal::Clear(terminal::ClearType::All)).unwrap()
-            .queue(cursor::MoveTo(0, 0)).unwrap();
+        let chat_block = Block::bordered()
+            .border_type(BorderType::Double)
+            .border_style(Style::new().gray())
+            .title(Title::from("[PubTrust Chat]".reset()).alignment(Alignment::Center));
 
-        for i in 0..term.height - 2 {
-            if self.history.len() <= i as usize { break; }
-            let data = self.history.index(self.history.len() - i as usize - 1);
+        let offset_v: u16 = if (self.history.len() as u16) <= chat_rect.height - 2 {
+            0
+        } else {
+            (self.history.len() as u16) - (chat_rect.height - 2)
+        };
 
-            stdout
-                .queue(cursor::MoveTo(0, term.height - 3 - i)).unwrap()
-                .queue(style::Print(data)).unwrap();
-        }
+        let chat = Paragraph::new(
+            Text::from(self.history.clone())
+        ).scroll((offset_v, 0));
 
-        stdout
-            .queue(cursor::MoveTo(0, term.height - 2)).unwrap()
-            .queue(style::Print("─".repeat(term.width as usize))).unwrap();
+        frame.render_widget(
+            chat.block(chat_block),
+            chat_rect
+        );
 
-        stdout
-            .queue(cursor::MoveTo(1, term.height - 1)).unwrap()
-            .queue(style::Print(&self.prompt)).unwrap();
-
-        stdout.flush().unwrap()
+        frame.render_widget(
+            Paragraph::new(format!(" {}", self.prompt))
+                .block(
+                    Block::bordered()
+                        .border_style(Style::new().gray())
+                ),
+            Rect::new(0, frame.size().height - 3, frame.size().width, 3),
+        );
     }
 
-    fn format_ui_message(&self, ui_message: UIMessage) -> String {
+    fn format_ui_message(&self, ui_message: UIMessage) -> Line<'static> {
         match ui_message {
             UIMessage::System(message) => {
-                format!(
-                    "{} {}",
-                    style("[SYSM]")
-                        .with(Color::White)
-                        .on(Color::Blue)
-                        .to_string(),
-                    style(message)
-                        .with(Color::Blue)
-                        .to_string()
-                )
+                Line::from(vec![
+                    Span::styled(
+                        "[SYSM]",
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::Blue),
+                    ),
+                    Span::styled(" ", Style::default()),
+                    Span::styled(
+                        message,
+                        Style::default()
+                            .fg(Color::Blue),
+                    ),
+                ])
             }
 
             UIMessage::SystemError(message) => {
-                format!(
-                    "{} {}",
-                    style("[SYSE]")
-                        .with(Color::White)
-                        .on(Color::Red)
-                        .to_string(),
-                    style(message)
-                        .with(Color::Red)
-                        .to_string()
-                )
+                Line::from(vec![
+                    Span::styled(
+                        "[SYSE]",
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::Red),
+                    ),
+                    Span::styled(" ", Style::default()),
+                    Span::styled(
+                        message,
+                        Style::default()
+                            .fg(Color::Red),
+                    ),
+                ])
             }
 
             UIMessage::Chat(author, message) => {
-                format!(
-                    "{} {} {}: {}",
-                    style("[CHAT]")
-                        .with(Color::White)
-                        .on(Color::DarkGrey)
-                        .to_string(),
-                    style(&author.alias)
-                        .attribute(Attribute::Bold)
-                        .to_string(),
-                    style(&author.get_pubkey_hash().unwrap_or("......".to_string()))
-                        .attribute(Attribute::Bold)
-                        .attribute(Attribute::Dim)
-                        .to_string(),
-                    style(message)
-                        .to_string()
-                )
+                Line::from(vec![
+                    Span::styled(
+                        "[CHAT]",
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::DarkGray),
+                    ),
+                    " ".into(),
+                    author.alias.clone()
+                        .bold(),
+                    " ".into(),
+                    author.get_pubkey_hash().unwrap_or("......".to_string())
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::DIM),
+                    ": ".into(),
+                    Span::styled(
+                        message,
+                        Style::default(),
+                    ),
+                ])
             }
 
             UIMessage::DM(author1, author2, message) => {
-                format!(
-                    "{} {}: {}",
-                    style("[ DM ]")
-                        .with(Color::White)
-                        .on(Color::Magenta)
-                        .to_string(),
-                    style(format!(
-                        "{} {} → {} {}",
-                        author1.alias,
-                        style(author1.get_pubkey_hash().unwrap_or("......".to_string()))
-                            .attribute(Attribute::Dim)
-                            .to_string(),
-                        author2.alias,
-                        style(author2.get_pubkey_hash().unwrap_or("......".to_string()))
-                            .attribute(Attribute::Dim)
-                            .to_string(),
-                    ))
-                        .attribute(Attribute::Bold)
-                        .to_string(),
-                    style(message)
-                        .to_string()
-                )
+                Line::from(vec![
+                    "[ DM ]"
+                        .bg(Color::White)
+                        .fg(Color::Magenta),
+                    " ".into(),
+
+                    /* AUTHORS START */
+                    author1.alias.clone()
+                        .into(),
+                    author1.get_pubkey_hash()
+                        .unwrap_or("......".to_string())
+                        .add_modifier(Modifier::DIM),
+                    " → ".into(),
+                    author2.alias.clone()
+                        .into(),
+                    author2.get_pubkey_hash()
+                        .unwrap_or("......".to_string())
+                        .add_modifier(Modifier::DIM),
+                    /* AUTHORS END */
+
+                    Span::styled(": ", Style::default()).into(),
+                    Span::styled(
+                        message,
+                        Style::default(),
+                    ).into(),
+                ])
             }
         }
     }
@@ -229,7 +227,7 @@ impl UIController {
                     ));
                 }
                 "/exit" | "/q" => {
-                    self.quit = true;
+                    // self.quit = true;
                 }
                 "/list" => {
                     self.history.push(self.format_ui_message(
@@ -295,33 +293,29 @@ impl UIController {
                         .map(|cmd| cmd.name.len())
                         .max().unwrap();
 
-                    self.history.push(self.format_ui_message(
-                        UIMessage::System(
-                            style("Available commands:")
-                                .attribute(Attribute::Bold)
-                                .to_string()
-                        )
-                    ));
-                    for command in commands {
-                        self.history.push(self.format_ui_message(
-                            UIMessage::System(
-                                format!(
-                                    " {}{} {} {}",
-
-                                    style(&command.name)
-                                        .attribute(Attribute::Bold)
-                                        .to_string(),
-                                    " ".repeat(max_size - command.name.len()),
-
-                                    style("-")
-                                        .with(Color::Blue),
-
-                                    style(command.description)
-                                        .with(Color::Blue)
-                                )
-                            )
-                        ));
-                    }
+                    // self.history.push(self.format_ui_message(
+                    //     UIMessage::System(
+                    //         style("Available commands:")
+                    //             .attribute(Attribute::Bold)
+                    //             .to_string()
+                    //     )
+                    // ));
+                    // for command in commands {
+                    //     self.history.push(self.format_ui_message(
+                    //         UIMessage::System(
+                    //             format!(
+                    //                 " {}{} {} {}",
+                    //                 style(&command.name)
+                    //                     .attribute(Attribute::Bold)
+                    //                     .to_string(),
+                    //                 " ".repeat(max_size - command.name.len()),
+                    //                 "-".with(crossterm::style::Color::Blue),
+                    //                 command.description
+                    //                     .with(crossterm::style::Color::Blue)
+                    //             )
+                    //         )
+                    //     ));
+                    // }
                 }
                 _ => {
                     self.history.push(self.format_ui_message(
