@@ -201,7 +201,7 @@ impl MqttController {
 
     // Packet interaction
 
-    fn deal_req_announcement(&mut self, packet: packets::ReqAnnouncement) {
+    fn deal_req_announcement(&mut self, _packet: packets::ReqAnnouncement) {
         self.send_announcement();
     }
 

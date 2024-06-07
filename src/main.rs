@@ -12,7 +12,6 @@ use crate::ui_controller::UIController;
 use crate::utils::{ClientSettings, UIAction, UIMessage};
 
 mod packets;
-mod old_ui_controller;
 mod mqtt_controller;
 mod utils;
 mod data_client;

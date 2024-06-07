@@ -140,11 +140,11 @@ impl UIController {
     }
 
     fn prompt_enter(&mut self) {
-        let mut prompt = self.prompt.trim_start();
+        let prompt = self.prompt.trim_start();
 
         if prompt.starts_with("/") {
             // is a command
-            let mut props: Vec<&str> = prompt.split(" ").collect();
+            let props: Vec<&str> = prompt.split(" ").collect();
 
             match props[0] {
                 "/dm" => {
@@ -217,29 +217,23 @@ impl UIController {
                         .map(|cmd| cmd.name.len())
                         .max().unwrap();
 
-                    // self.history.push(self.format_ui_message(
-                    //     UIMessage::System(
-                    //         style("Available commands:")
-                    //             .attribute(Attribute::Bold)
-                    //             .to_string()
-                    //     )
-                    // ));
-                    // for command in commands {
-                    //     self.history.push(self.format_ui_message(
-                    //         UIMessage::System(
-                    //             format!(
-                    //                 " {}{} {} {}",
-                    //                 style(&command.name)
-                    //                     .attribute(Attribute::Bold)
-                    //                     .to_string(),
-                    //                 " ".repeat(max_size - command.name.len()),
-                    //                 "-".with(crossterm::style::Color::Blue),
-                    //                 command.description
-                    //                     .with(crossterm::style::Color::Blue)
-                    //             )
-                    //         )
-                    //     ));
-                    // }
+                    self.history.push(self.format_ui_message(
+                        UIMessage::System(
+                            "Available commands:".to_string()
+                        )
+                    ));
+                    for command in commands {
+                        self.history.push(self.format_ui_message(
+                            UIMessage::System(
+                                format!(
+                                    " {}{} - {}",
+                                    command.name,
+                                    " ".repeat(max_size - command.name.len()),
+                                    command.description
+                                )
+                            )
+                        ));
+                    }
                 }
                 _ => {
                     self.history.push(self.format_ui_message(
@@ -259,7 +253,7 @@ impl UIController {
         match ui_message {
             UIMessage::System(message) => {
                 Line::from(vec![
-                    "[SYSM]"
+                    " SYSM "
                         .fg(Color::White)
                         .bg(Color::Blue),
                     " ".into(),
@@ -270,7 +264,7 @@ impl UIController {
 
             UIMessage::SystemError(message) => {
                 Line::from(vec![
-                    "[SYSE]"
+                    " SYSE "
                         .fg(Color::White)
                         .bg(Color::Red),
                     " ".into(),
@@ -280,9 +274,9 @@ impl UIController {
 
             UIMessage::Chat(author, message) => {
                 Line::from(vec![
-                    "[CHAT]"
+                    " CHAT "
                         .fg(Color::White)
-                        .bg(Color::DarkGray),
+                        .bg(Color::Gray),
                     " ".into(),
                     author.alias.clone()
                         .bold(),
@@ -297,7 +291,7 @@ impl UIController {
 
             UIMessage::DM(author1, author2, message) => {
                 Line::from(vec![
-                    "[ DM ]"
+                    "  DM  "
                         .bg(Color::White)
                         .fg(Color::Magenta),
                     " ".into(),
