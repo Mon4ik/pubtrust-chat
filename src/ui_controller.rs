@@ -1,12 +1,20 @@
-use std::cmp::min;
-use std::io::{self, stdout};
+use std::io::{self, stdout, Stdout};
 use std::sync::mpsc::{Receiver, Sender};
 
-use crossterm::{event, ExecutableCommand, terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}};
+use crossterm::{
+    event,
+    ExecutableCommand,
+    terminal::{
+        disable_raw_mode,
+        enable_raw_mode,
+        EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
+};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, BorderType, Paragraph};
-use ratatui::widgets::block::Title;
+use ratatui::widgets::*;
+use ratatui::widgets::block::*;
 
 use crate::utils::{UIAction, UIHelpCommand, UIMessage};
 
@@ -16,36 +24,31 @@ pub struct UIController {
 
     ui_message_receiver: Receiver<UIMessage>,
     ui_action_sender: Sender<UIAction>,
+    should_quit: bool,
 }
 
 impl UIController {
     pub fn new(ui_message_receiver: Receiver<UIMessage>, ui_action_sender: Sender<UIAction>) -> Self {
-        // let mut lines = vec![];
-        // lines.push(Line::from(vec![
-        //     Span::styled("Hello ", Style::default().fg(Color::Yellow)),
-        //     Span::styled("World", Style::default().fg(Color::Blue).bg(Color::White)),
-        // ]));
-        //
-
         Self {
             history: vec![],
             prompt: String::new(),
+            should_quit: false,
+
             ui_message_receiver,
             ui_action_sender,
         }
     }
 
-    pub fn start(&mut self) -> io::Result<()> {
-        enable_raw_mode()?;
-        stdout().execute(EnterAlternateScreen)?;
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-        let mut should_quit = false;
-        while !should_quit {
+    pub fn start(&mut self) -> io::Result<()> {
+        let mut terminal = self.init_terminal()?;
+        terminal.show_cursor()?;
+
+        while !self.should_quit {
             terminal.draw(|frame| {
                 self.ui(frame);
             })?;
-            should_quit = self.handle_events()?;
+            self.handle_events()?;
         }
 
         disable_raw_mode()?;
@@ -53,7 +56,13 @@ impl UIController {
         Ok(())
     }
 
-    fn handle_events(&mut self) -> io::Result<bool> {
+    fn init_terminal(&self) -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
+        enable_raw_mode()?;
+        stdout().execute(EnterAlternateScreen)?;
+        Terminal::new(CrosstermBackend::new(stdout()))
+    }
+
+    fn handle_events(&mut self) -> io::Result<()> {
         match self.ui_message_receiver.try_recv() {
             Ok(ui_message) => {
                 self.history.push(self.format_ui_message(ui_message))
@@ -67,7 +76,8 @@ impl UIController {
                     match key.code {
                         KeyCode::Char(char) => {
                             if char == 'c' && key.modifiers.contains(KeyModifiers::CONTROL) {
-                                return Ok(true);
+                                self.should_quit = true;
+                                return Ok(());
                             } else {
                                 self.prompt.push(char);
                             }
@@ -85,21 +95,26 @@ impl UIController {
                 _ => {}
             }
         }
-        Ok(false)
+
+        Ok(())
     }
 
     fn ui(&mut self, frame: &mut Frame) {
-        let chat_rect = Rect::new(0, 0, frame.size().width, frame.size().height - 3);
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Fill(1),
+                Constraint::Length(3)
+            ])
+            .split(frame.size());
 
-        let chat_block = Block::bordered()
-            .border_type(BorderType::Double)
-            .border_style(Style::new().gray())
-            .title(Title::from("[PubTrust Chat]".reset()).alignment(Alignment::Center));
+        let chat_rect = layout[0];
+        let input_rect = layout[1];
 
-        let offset_v: u16 = if (self.history.len() as u16) <= chat_rect.height - 2 {
+        let offset_v: u16 = if (self.history.len() as u16) <= chat_rect.height {
             0
         } else {
-            (self.history.len() as u16) - (chat_rect.height - 2)
+            (self.history.len() as u16) - chat_rect.height
         };
 
         let chat = Paragraph::new(
@@ -107,108 +122,21 @@ impl UIController {
         ).scroll((offset_v, 0));
 
         frame.render_widget(
-            chat.block(chat_block),
-            chat_rect
+            chat,
+            chat_rect.inner(&Margin::new(1, 0)),
         );
 
         frame.render_widget(
             Paragraph::new(format!(" {}", self.prompt))
                 .block(
                     Block::bordered()
-                        .border_style(Style::new().gray())
+                        .border_style(Style::new().dim())
                 ),
-            Rect::new(0, frame.size().height - 3, frame.size().width, 3),
+            input_rect,
         );
-    }
 
-    fn format_ui_message(&self, ui_message: UIMessage) -> Line<'static> {
-        match ui_message {
-            UIMessage::System(message) => {
-                Line::from(vec![
-                    Span::styled(
-                        "[SYSM]",
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Blue),
-                    ),
-                    Span::styled(" ", Style::default()),
-                    Span::styled(
-                        message,
-                        Style::default()
-                            .fg(Color::Blue),
-                    ),
-                ])
-            }
 
-            UIMessage::SystemError(message) => {
-                Line::from(vec![
-                    Span::styled(
-                        "[SYSE]",
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Red),
-                    ),
-                    Span::styled(" ", Style::default()),
-                    Span::styled(
-                        message,
-                        Style::default()
-                            .fg(Color::Red),
-                    ),
-                ])
-            }
-
-            UIMessage::Chat(author, message) => {
-                Line::from(vec![
-                    Span::styled(
-                        "[CHAT]",
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::DarkGray),
-                    ),
-                    " ".into(),
-                    author.alias.clone()
-                        .bold(),
-                    " ".into(),
-                    author.get_pubkey_hash().unwrap_or("......".to_string())
-                        .add_modifier(Modifier::BOLD)
-                        .add_modifier(Modifier::DIM),
-                    ": ".into(),
-                    Span::styled(
-                        message,
-                        Style::default(),
-                    ),
-                ])
-            }
-
-            UIMessage::DM(author1, author2, message) => {
-                Line::from(vec![
-                    "[ DM ]"
-                        .bg(Color::White)
-                        .fg(Color::Magenta),
-                    " ".into(),
-
-                    /* AUTHORS START */
-                    author1.alias.clone()
-                        .into(),
-                    author1.get_pubkey_hash()
-                        .unwrap_or("......".to_string())
-                        .add_modifier(Modifier::DIM),
-                    " → ".into(),
-                    author2.alias.clone()
-                        .into(),
-                    author2.get_pubkey_hash()
-                        .unwrap_or("......".to_string())
-                        .add_modifier(Modifier::DIM),
-                    /* AUTHORS END */
-
-                    Span::styled(": ", Style::default()).into(),
-                    Span::styled(
-                        message,
-                        Style::default(),
-                    ).into(),
-                ])
-            }
-        }
+        frame.set_cursor(input_rect.x + 2 + self.prompt.len() as u16, input_rect.y + 1);
     }
 
     fn prompt_enter(&mut self) {
@@ -227,7 +155,7 @@ impl UIController {
                     ));
                 }
                 "/exit" | "/q" => {
-                    // self.quit = true;
+                    self.should_quit = true;
                 }
                 "/list" => {
                     self.history.push(self.format_ui_message(
@@ -258,10 +186,6 @@ impl UIController {
                     ).unwrap();
                 }
                 "/help" => {
-                    // style("Available commands:")
-                    //     .attribute(Attribute::Bold),
-                    // style(" /exit, /q - Exit from chat"),
-                    // style(" /list     - "),
                     let mut commands: Vec<UIHelpCommand> = vec![];
 
                     commands.push(UIHelpCommand {
@@ -328,6 +252,76 @@ impl UIController {
             self.ui_action_sender.send(
                 UIAction::SendMessage(prompt.to_string())
             ).unwrap()
+        }
+    }
+
+    fn format_ui_message(&self, ui_message: UIMessage) -> Line<'static> {
+        match ui_message {
+            UIMessage::System(message) => {
+                Line::from(vec![
+                    "[SYSM]"
+                        .fg(Color::White)
+                        .bg(Color::Blue),
+                    " ".into(),
+                    message
+                        .fg(Color::Blue),
+                ])
+            }
+
+            UIMessage::SystemError(message) => {
+                Line::from(vec![
+                    "[SYSE]"
+                        .fg(Color::White)
+                        .bg(Color::Red),
+                    " ".into(),
+                    message.fg(Color::Red),
+                ])
+            }
+
+            UIMessage::Chat(author, message) => {
+                Line::from(vec![
+                    "[CHAT]"
+                        .fg(Color::White)
+                        .bg(Color::DarkGray),
+                    " ".into(),
+                    author.alias.clone()
+                        .bold(),
+                    " ".into(),
+                    author.get_pubkey_hash().unwrap_or("......".to_string())
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::DIM),
+                    ": ".into(),
+                    message.into(),
+                ])
+            }
+
+            UIMessage::DM(author1, author2, message) => {
+                Line::from(vec![
+                    "[ DM ]"
+                        .bg(Color::White)
+                        .fg(Color::Magenta),
+                    " ".into(),
+                    /* AUTHORS START */
+                    author1.alias.clone()
+                        .into(),
+                    author1.get_pubkey_hash()
+                        .unwrap_or("......".to_string())
+                        .add_modifier(Modifier::DIM),
+                    " → ".into(),
+                    author2.alias.clone()
+                        .into(),
+                    author2.get_pubkey_hash()
+                        .unwrap_or("......".to_string())
+                        .add_modifier(Modifier::DIM),
+                    /* AUTHORS END */
+
+                    Span::styled(": ", Style::default()).into(),
+                    Span::styled(
+                        message,
+                        Style::default(),
+                    ).into(),
+                ])
+            }
         }
     }
 }
