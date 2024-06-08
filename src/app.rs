@@ -1,5 +1,7 @@
 use std::io::{self, stdout, Stdout};
+use std::panic::{set_hook, take_hook};
 use std::sync::mpsc::{Receiver, Sender};
+use std::time::Duration;
 
 use crossterm::{
     event,
@@ -18,7 +20,7 @@ use ratatui::widgets::block::*;
 
 use crate::utils::{UIAction, UIHelpCommand, UIMessage};
 
-pub struct UIController {
+pub struct App {
     history: Vec<Line<'static>>,
     prompt: String,
 
@@ -27,7 +29,7 @@ pub struct UIController {
     should_quit: bool,
 }
 
-impl UIController {
+impl App {
     pub fn new(ui_message_receiver: Receiver<UIMessage>, ui_action_sender: Sender<UIAction>) -> Self {
         Self {
             history: vec![],
@@ -39,8 +41,9 @@ impl UIController {
         }
     }
 
-
     pub fn start(&mut self) -> io::Result<()> {
+        self.init_panic_hook();
+
         let mut terminal = self.init_terminal()?;
         terminal.show_cursor()?;
 
@@ -51,15 +54,30 @@ impl UIController {
             self.handle_events()?;
         }
 
-        disable_raw_mode()?;
-        stdout().execute(LeaveAlternateScreen)?;
+        Self::restore_terminal()?;
         Ok(())
+    }
+
+    fn init_panic_hook(&self) {
+        let original_hook = take_hook();
+
+        set_hook(Box::new(move |panic_info| {
+            let _ = Self::restore_terminal();
+            original_hook(panic_info);
+        }));
     }
 
     fn init_terminal(&self) -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
         enable_raw_mode()?;
         stdout().execute(EnterAlternateScreen)?;
         Terminal::new(CrosstermBackend::new(stdout()))
+    }
+
+    fn restore_terminal() -> io::Result<()> {
+        disable_raw_mode()?;
+        stdout().execute(LeaveAlternateScreen)?;
+
+        Ok(())
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -70,7 +88,7 @@ impl UIController {
             _ => {}
         }
 
-        if event::poll(std::time::Duration::from_millis(50))? {
+        if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key) => {
                     match key.code {
@@ -244,7 +262,7 @@ impl UIController {
         } else {
             // is a chat message
             self.ui_action_sender.send(
-                UIAction::SendMessage(prompt.to_string())
+                UIAction::SendMessage(prompt.trim().to_string())
             ).unwrap()
         }
     }
