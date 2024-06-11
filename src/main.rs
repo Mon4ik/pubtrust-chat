@@ -1,5 +1,6 @@
 use std::{env, thread};
 use std::path::PathBuf;
+use std::process::exit;
 use std::sync::mpsc::channel;
 
 use clap::Parser;
@@ -7,14 +8,14 @@ use home::home_dir;
 use serde::{Deserialize, Serialize};
 
 use crate::mqtt_controller::MqttController;
-use crate::ui_controller::UIController;
+use crate::app::App;
 use crate::utils::{ClientSettings, UIAction, UIMessage};
 
 mod packets;
-mod ui_controller;
 mod mqtt_controller;
 mod utils;
 mod data_client;
+mod app;
 
 
 /// Simple program to greet a person
@@ -71,15 +72,13 @@ fn main() {
         mqtt_controller.start();
     });
 
-    thread::spawn(move || {
-        let mut ui_controller = UIController::new(
-            ui_message_receiver,
-            ui_action_sender,
-        );
+    let mut app = App::new(
+        ui_message_receiver,
+        ui_action_sender,
+    );
 
-        ui_controller.start();
-    });
-
-
-    loop {}
+    match app.start() {
+        Ok(_) => exit(0),
+        Err(_) => exit(1)
+    }
 }

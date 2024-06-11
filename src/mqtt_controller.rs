@@ -1,10 +1,11 @@
 use std::fmt::Debug;
+use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nanoid::nanoid;
 use openssl::pkey::PKey;
-use rumqttc::{Client, ClientError, Connection, Event, Incoming, MqttOptions, Publish, QoS};
+use rumqttc::{Client, ClientError, Event, Incoming, MqttOptions, Publish, QoS};
 use serde::Serialize;
 
 use crate::data_client::DataClient;
@@ -13,13 +14,13 @@ use crate::utils::{ChatClient, ClientSettings, UIAction, UIMessage};
 
 pub struct MqttController {
     client: Client,
-    connection: Connection,
     chat_clients: Vec<ChatClient>,
 
     client_settings: ClientSettings,
 
     ui_message_sender: Sender<UIMessage>,
     ui_action_receiver: Receiver<UIAction>,
+    event_receiver: Receiver<Event>,
     data_client: DataClient,
 }
 
@@ -35,16 +36,35 @@ impl MqttController {
         let (mut client, mut connection) = Client::new(mqttoptions, 10);
         let data_client = DataClient::new(client_settings.clone());
 
+        let (event_sender, event_receiver) = mpsc::channel::<Event>();
+        let _ui_message_sender = ui_message_sender.clone();
+        std::thread::spawn(move || {
+            for (i, notification) in connection.iter().enumerate() {
+                match notification {
+                    Ok(event) => event_sender.send(event).unwrap(),
+                    Err(err) => {
+                        _ui_message_sender.send(UIMessage::SystemError(
+                            format!("MQTT Error: {}", err)
+                        )).unwrap();
+
+                        break;
+                    }
+                };
+            }
+        });
+
         Self {
             client,
-            connection,
             client_settings,
             ui_message_sender,
             ui_action_receiver,
+            event_receiver,
             data_client,
             chat_clients: Vec::new(),
         }
     }
+
+    pub fn start_mqtt() {}
 
     pub fn start(&mut self) {
         self.client.subscribe(&self.client_settings.topic, QoS::AtMostOnce).unwrap();
@@ -61,19 +81,8 @@ impl MqttController {
                 _ => {}
             }
 
-            match self.connection.recv_timeout(Duration::from_millis(500)) {
-                Ok(notification) => {
-                    match notification {
-                        Ok(event) => self.handle_packet(event),
-                        Err(err) => {
-                            self.ui_message_sender.send(UIMessage::SystemError(
-                                format!("MQTT Error: {}", err)
-                            )).unwrap();
-
-                            break;
-                        }
-                    }
-                }
+            match self.event_receiver.try_recv() {
+                Ok(event) => self.handle_packet(event),
                 _ => {}
             }
         }
@@ -97,8 +106,7 @@ impl MqttController {
                 self.publish_packet(PacketType::ChatMessage, &chat_message).expect("Couldn't send message.");
             }
             UIAction::ChangeAlias(alias) => {
-                self.data_client.database_file.alias = alias;
-                let res = self.data_client.save_changes();
+                let res = self.data_client.change_alias(alias);
                 if res.is_err() {
                     self.ui_message_sender.send(UIMessage::SystemError(format!("{:?}", res.err().unwrap()))).unwrap()
                 }
@@ -193,7 +201,7 @@ impl MqttController {
 
     // Packet interaction
 
-    fn deal_req_announcement(&mut self, packet: packets::ReqAnnouncement) {
+    fn deal_req_announcement(&mut self, _packet: packets::ReqAnnouncement) {
         self.send_announcement();
     }
 

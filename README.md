@@ -4,10 +4,9 @@ Chat, based of Public/Private key and signatures, and working on MQTT Protocol
 
 ![Showcase](docs/showcase.gif)
 
-> [!WARNING]
-> 
-> Poor alpha alpha alpha version, a lot of changes will happen
-
+> [!CAUTION]
+>
+> Poor alpha version, may contain crashes, memory leak, skill issues, zero-day exploits, and other basic bugs
 
 ## Installation
 
@@ -32,9 +31,10 @@ Chat, based of Public/Private key and signatures, and working on MQTT Protocol
    ```
 
 ## TODO
-- [ ] DirectMessages
-- [ ] /q, /exit, /list, /help commands
-- [ ] Better code structure (tbh looks like a 💩)
-- [ ] Do something with thread channels, mutex, etc
+
+- [X] Better code structure (tbh looks like a 💩)
+- [X] Do something with thread channels, mutex, etc
 - [ ] GitHub Actions
+- [ ] Make functionality for /list, /room 
+- [ ] Direct Messages
 - [ ] Check windows support ~~(nobody cares)~~

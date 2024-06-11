@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crossterm::style::{Attribute, style, Stylize};
 use openssl::pkey::{PKey, Public};
 use openssl::sha;
 use serde::{Deserialize, Serialize};
@@ -16,7 +15,7 @@ pub struct ChatClient {
 impl ChatClient {
     pub fn get_pubkey_hash(&self) -> Option<String> {
         let pubkey_bytes = self.pubkey.public_key_to_pem();
-        if pubkey_bytes.is_err() { return None }
+        if pubkey_bytes.is_err() { return None; }
 
         let mut hasher = sha::Sha1::new();
         hasher.update(&pubkey_bytes.unwrap());
@@ -35,6 +34,11 @@ pub enum UIMessage {
     DM(ChatClient, ChatClient, String),
 }
 
+#[derive(Clone, Debug)]
+pub struct UIHelpCommand {
+    pub(crate) name: String,
+    pub(crate) description: String,
+}
 
 // pub enum UIActionType {
 //     ChangeAlias,

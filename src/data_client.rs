@@ -80,9 +80,6 @@ impl DataClient {
     }
 
     pub fn save_changes(&self) -> serde_json::Result<()> {
-        let display = self.client_settings.profile.display();
-
-
         let file = OpenOptions::new()
             .write(true)
             .truncate(true)
