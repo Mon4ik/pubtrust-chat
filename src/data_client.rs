@@ -1,4 +1,3 @@
-use std::{error, fmt};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Write};
@@ -11,17 +10,6 @@ use openssl::rsa::Rsa;
 use openssl::sign::{Signer, Verifier};
 
 use crate::utils::{ClientSettings, DatabaseFile};
-
-#[derive(Debug)]
-struct VerifyError;
-
-impl fmt::Display for VerifyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "invalid signature")
-    }
-}
-
-impl error::Error for VerifyError {}
 
 pub struct DataClient {
     client_settings: ClientSettings,
